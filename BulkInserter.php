@@ -1,6 +1,5 @@
 <?php
 /**
- * User: stan
  * Created on: 2017-11-14
  *
  * Functionality to bulk-insert values into mysql using PDO.
@@ -10,7 +9,7 @@ class BulkInserter {
 
   /** @var  \PDO */
   private $pdo;
-  private $batch = 100; // how many rows to insert at once
+  private $batch = 500; // how many rows to insert at once
   private $bufferSize;
   private $tableParams;
   private $tableName;
@@ -18,17 +17,20 @@ class BulkInserter {
   private $fields;
   public $writesRequested = 0;
   public $writesCompleted = 0;
+  public $dieOnError = true;
 
   /**
    * BulkInserter constructor.
-   * @param $pdo  PDO
+   * @param $pdo  \PDO
    * @param $tableName  string  Which table we're inserting in.
    * @param $fieldNames array   An array of fields we'll be inserting.
    * @param $replace  bool      Whether to use REPLACE INTO instead of INSERT (only use if unique/primary keys are present)
+   * @param $dieOnError  bool   If false, instead of throwing an exception, an error is echoed and the process will continue
    */
-  public function __construct($pdo, $tableName, $fieldNames, $replace = false) {
+  public function __construct($pdo, $tableName, $fieldNames, $replace = false, $dieOnError = true) {
     $this->pdo = $pdo;
     $this->tableName = $tableName;
+    $this->dieOnError = $dieOnError;
     $this->bufferSize = 0;
     $this->tableParams = [];
     $op = $replace ? "REPLACE" : "INSERT IGNORE";
@@ -41,7 +43,7 @@ class BulkInserter {
     $this->tableInsertQuery = "$op INTO $tableName (" . implode(',', $fieldNames) . ') VALUES ';
 
     // Useless for MyISAM but potentially a time-saver for other engines
-    //$this->pdo->beginTransaction();
+    $this->pdo->beginTransaction();
   }
 
   /**
@@ -71,8 +73,13 @@ class BulkInserter {
       $statement = $this->pdo->prepare($query);
       $result = $statement->execute($this->tableParams);
 
-      if (!$result) {
-        echo $statement->errorInfo()[2] . "\n";
+      if ($result === false) {
+        if ($this->dieOnError) {
+          $this->pdo->rollBack();
+          throw new \RuntimeException($statement->errorInfo()[2]);
+        } else {
+          echo $statement->errorInfo()[2] . "\n";
+        }
       }
 
       // We want these to be equal at the end (unless this is a REPLACE INTO)
@@ -84,24 +91,29 @@ class BulkInserter {
       $this->tableParams = [];
     }
 
-    // Might be worth enabling for non-MyISAM tables inserts
-    /*
     if ($final) {
       $this->pdo->commit();
     }
-    */
-
   }
 
   /**
    * Iterates over a data result and inserts each row into the table.
-   * @param $result PDOStatement
+   * @param $result \PDOStatement
    */
   public function insertPDOResult($result) {
 
-    while ($row = $result->fetch(PDO::FETCH_NUM)) {
+    while ($row = $result->fetch(\PDO::FETCH_NUM)) {
       $this->write($row);
     }
     $this->flush(true); // flush the write buffers
   }
+  
+  /**
+   * Sets the number of writes done at once.
+   * @param $num
+   */
+    public function setBatch($num) {
+      $this->batch = $num;
+    }
+
 }
