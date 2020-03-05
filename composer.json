@@ -1,0 +1,21 @@
+{
+    "name": "sdragnev/bulkdbinserter",
+    "type": "library",
+    "description": "Create a database writer using PDO to support multiple row insertion",
+    "keywords": ["database", "PHP", "PDO"],
+    "homepage": "https://github.com/sdragnev/BulkDBInserter",
+    "license": "GPL-3.0-or-later",
+    "authors": [
+        {
+            "name": "Stan Dragnev",
+            "homepage": "https://dragnev.ca"
+        }
+    ],
+    "require": {
+        "php": ">=5.5.0",
+        "ext-pdo": "*"
+    },
+    "autoload": {
+        "files": ["BulkInserter.php"]
+    }
+}
