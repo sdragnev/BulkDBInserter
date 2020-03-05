@@ -48,10 +48,10 @@ class BulkInserter {
 
   /**
    * Queue up an insert.
-   * @param $values
+   * @param array $values
    */
   public function write($values) {
-    $this->tableParams = array_merge($this->tableParams, $values);
+    array_push($this->tableParams, ...$values);
     $this->bufferSize++;
 
     // Flush the buffer
