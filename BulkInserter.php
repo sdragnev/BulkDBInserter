@@ -3,7 +3,7 @@
  * User: stan
  * Created on: 2017-11-14
  *
- * Functionality to bulk-insert values into a database table using PDO.
+ * Functionality to bulk-insert values into mysql using PDO.
  */
 
 namespace Intranet\Services;
@@ -22,6 +22,7 @@ class BulkInserter
     private $tableInsertQuery;
     private $fields;
     private $totalCount;
+    private $originalErrMode;
     public $writesRequested = 0;
     public $writesCompleted = 0;
     public $dieOnError = true;
@@ -39,6 +40,8 @@ class BulkInserter
     public function __construct($pdo, $tableName, $fieldNames, $replace = false, $dieOnError = true, $transaction = true,
                                 $totalCount = null) {
         $this->pdo = $pdo;
+        $this->originalErrMode = $pdo->getAttribute(\PDO::ATTR_ERRMODE);    // save this so we can restore it
+        $this->pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
         $this->dieOnError = $dieOnError;
         $this->bufferSize = 0;
         $this->transaction = $transaction;
@@ -54,7 +57,11 @@ class BulkInserter
         $this->tableInsertQuery = "$op INTO $tableName (" . implode(',', $fieldNames) . ') VALUES ';
 
         if ($this->transaction) {
-            $this->pdo->beginTransaction();
+            $result = $this->pdo->beginTransaction();
+            if (!$result) {
+                throw new \RuntimeException("Failed to start transaction in BulkInserter.\n" .
+                    print_r($this->pdo->errorInfo(), 1));
+            }
         }
     }
 
@@ -76,6 +83,16 @@ class BulkInserter
     }
 
     /**
+     * Execute multiple writes at once from an array of array of rows.
+     * @param array $valuesArr
+     */
+    public function bulkWrite(array $valuesArr) {
+        foreach ($valuesArr as $values) {
+            $this->write($values);
+        }
+    }
+
+    /**
      * Force a write.
      * @param $final  boolean Whether this will be the last operation for this object.
      */
@@ -84,15 +101,18 @@ class BulkInserter
         if ($this->bufferSize > 0) {
             // Only bother if we have anything to do
             $query = $this->tableInsertQuery . implode(',', array_fill(0, $this->bufferSize, $this->fields));
-            $statement = $this->pdo->prepare($query);
-            $result = $statement->execute($this->tableParams);
 
-            if ($result === false) {
+            try {
+                $statement = $this->pdo->prepare($query);
+                $statement->execute($this->tableParams);
+            } catch (\PDOException $e) {
+                fwrite(STDERR, sprintf("Error: %s\nTrace: %s\n", print_r($this->pdo->errorInfo(), 1),
+                    $e->getTraceAsString()));
                 if ($this->dieOnError) {
-                    $this->pdo->rollBack();
-                    throw new \RuntimeException($statement->errorInfo()[2]);
-                } else {
-                    echo $statement->errorInfo()[2] . "\n";
+                    if ($this->pdo->inTransaction()) {
+                        $this->pdo->rollBack();
+                    }
+                    throw $e;
                 }
             }
 
@@ -106,7 +126,20 @@ class BulkInserter
         }
 
         if ($final && $this->transaction) {
-            $this->pdo->commit();
+            try {
+                $this->pdo->commit();
+            } catch (\PDOException $e) {
+                fwrite(STDERR, sprintf("Error: %s\nTrace: %s\n", print_r($this->pdo->errorInfo(), 1),
+                    $e->getTraceAsString()));
+                if ($this->dieOnError) {
+                    if ($this->pdo->inTransaction()) {
+                        $this->pdo->rollBack();
+                    }
+                    throw $e;
+                }
+            }
+
+            $this->pdo->setAttribute(\PDO::ATTR_ERRMODE, $this->originalErrMode);
         }
 
     }
