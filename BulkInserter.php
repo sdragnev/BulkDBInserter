@@ -6,11 +6,6 @@
  * Functionality to bulk-insert values into mysql using PDO.
  */
 
-namespace Intranet\Services;
-
-use PDO;
-use PDOStatement;
-
 class BulkInserter
 {
 
